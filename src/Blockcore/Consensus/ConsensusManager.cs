@@ -28,6 +28,9 @@ namespace Blockcore.Consensus
     /// <inheritdoc cref="IConsensusManager"/>
     public class ConsensusManager : IConsensusManager
     {
+
+        private const int HaltAtBlock = 3000000;
+
         /// <summary>
         /// Maximum memory in bytes that can be taken by the blocks that were downloaded but
         /// not yet validated or included to the consensus chain.
@@ -275,6 +278,17 @@ namespace Blockcore.Consensus
             {
                 int peerId = peer.Connection.Id;
 
+                // Check if any header exceeds block HaltAtBlock
+                if (headers.Any(header =>
+                {
+                    var chainedHeader = this.chainIndexer.GetHeader(header.GetHash());
+                    return chainedHeader != null && chainedHeader.Height > HaltAtBlock;
+                }))
+                {
+                    this.logger.LogInformation($"Block height limit of {HaltAtBlock} reached. Stopping header processing.");
+                    return null; // Stop processing further headers
+                }
+
                 connectNewHeadersResult = this.chainedHeaderTree.ConnectNewHeaders(peerId, headers);
 
                 if (!this.peersByPeerId.ContainsKey(peerId))
@@ -426,6 +440,13 @@ namespace Blockcore.Consensus
             {
                 this.logger.LogTrace("(-)[DOWNLOAD_FAILED_NO_PEERS_CLAIMED_BLOCK]:'{0}'", chainedHeaderBlock.ChainedHeader);
                 return;
+            }
+
+            // Prevent processing blocks with height greater than HaltAtBlock
+            if (chainedHeaderBlock.ChainedHeader.Height > HaltAtBlock)
+            {
+                this.logger.LogInformation($"Block at height {chainedHeaderBlock.ChainedHeader.Height} exceeds the limit of {HaltAtBlock}. Stopping block processing.");
+                return; // Stop processing further blocks
             }
 
             bool partialValidationRequired = false;
@@ -1015,6 +1036,13 @@ namespace Blockcore.Consensus
             {
                 foreach (ChainedHeader chainedHeader in chainedHeaders)
                 {
+                    // Prevent downloading blocks with height greater than HaltAtBlock
+                    if (chainedHeader.Height > HaltAtBlock)
+                    {
+                        this.logger.LogInformation($"Block at height {chainedHeader.Height} exceeds the limit of {HaltAtBlock}. Skipping download.");
+                        continue; // Skip downloading this block
+                    }
+
                     bool blockAlreadyAsked = this.callbacksByBlocksRequestedHash.TryGetValue(chainedHeader.HashBlock, out DownloadedCallbacks downloadedCallbacks);
 
                     if (!blockAlreadyAsked)
@@ -1456,8 +1484,8 @@ namespace Blockcore.Consensus
                 long tipAge = currentTime - this.chainState.ConsensusTip.Header.BlockTime.ToUnixTimeSeconds();
                 long maxTipAge = this.consensusSettings.MaxTipAge;
 
-                log.AppendLine($"Tip Age: { TimeSpan.FromSeconds(tipAge).ToString(@"dd\.hh\:mm\:ss") } (maximum is { TimeSpan.FromSeconds(maxTipAge).ToString(@"dd\.hh\:mm\:ss") })");
-                log.AppendLine($"In IBD Stage: { (this.isIbd ? "Yes" : "No") }");
+                log.AppendLine($"Tip Age: {TimeSpan.FromSeconds(tipAge).ToString(@"dd\.hh\:mm\:ss")} (maximum is {TimeSpan.FromSeconds(maxTipAge).ToString(@"dd\.hh\:mm\:ss")})");
+                log.AppendLine($"In IBD Stage: {(this.isIbd ? "Yes" : "No")}");
 
                 string unconsumedBlocks = this.FormatBigNumber(this.chainedHeaderTree.UnconsumedBlocksCount);
 
