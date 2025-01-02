@@ -368,7 +368,7 @@ namespace Blockcore.Features.Wallet
 
             // Get wallet and all addresses
             Types.Wallet wallet = this.GetWalletByName(walletName);
-            var allAddresses = wallet.GetAllAddresses();
+            var allAddresses = wallet.GetAllAddresses(a => true);
 
             // Try to find the address directly first
             HdAddress hdAddress = allAddresses.FirstOrDefault(a => a.Address == externalAddress);
